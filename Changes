@@ -1,0 +1,6 @@
+Revision history for Perl extension Data::Queue::Persistent.
+
+0.01  Wed Aug  8 17:48:39 2007
+	- original version; created by h2xs 1.23 with options
+		-X Data::Queue::Persistent
+
