@@ -6,7 +6,7 @@ use warnings;
 use Carp qw / croak /;
 use DBI;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 our $schema = q{
     CREATE TABLE %s (
@@ -20,7 +20,12 @@ our $schema = q{
 sub new {
     my ($class, %opts) = @_;
 
-    my $dsn = delete $opts{dsn} or croak "No DSN speficied for Data::Queue::Persistent";
+    my $dsn = delete $opts{dsn};
+    my $dbh = delete $opts{dbh};
+
+    croak "No DSN or database handle passed to Data::Queue::Persistent->new"
+        unless $dsn || $dbh;
+
     my $username = delete $opts{username};
     my $pass = delete $opts{pass};
 
@@ -29,7 +34,10 @@ sub new {
     my $table = delete $opts{table} || 'persistent_queue';
 
     # connect to db
-    my $dbh = DBI->connect($dsn, $username, $pass) or croak "Could not connect to database";
+    if ($dsn) {
+        $dbh = DBI->connect($dsn, $username, $pass)
+            or croak "Could not connect to database";
+    }
 
     my $self = {
         dbh => $dbh,
@@ -214,6 +222,8 @@ exists.
 Options:
 
 dsn: DSN for database connection
+
+dbh: Already initialized DBI connection handle
 
 id: The ID of this queue. You can have multiple queues stored in the same table, distinguished by their IDs.
 
