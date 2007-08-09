@@ -5,8 +5,9 @@ use strict;
 use warnings;
 use Carp qw / croak /;
 use DBI;
+use Data::Dumper;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 our $schema = q{
     CREATE TABLE %s (
@@ -29,6 +30,8 @@ sub new {
     my $username = delete $opts{username};
     my $pass = delete $opts{pass};
 
+    my $cache = delete $opts{cache} || 0;
+
     my $key = delete $opts{id} or croak "No queue id defined";
 
     my $table = delete $opts{table} || 'persistent_queue';
@@ -40,16 +43,17 @@ sub new {
     }
 
     my $self = {
-        dbh => $dbh,
-        q   => [],
-        key => $key,
+        cache      => $cache,
+        dbh        => $dbh,
+        q          => [],
+        key        => $key,
         table_name => $table,
     };
 
     bless $self, $class;
 
     $self->init;
-    $self->load;
+    $self->load if $self->caching;
 
     return $self;
 }
@@ -58,9 +62,23 @@ sub table_name { $_[0]->{table_name} }
 sub dbh { $_[0]->{dbh} }
 sub key { $_[0]->{key} }
 sub q { $_[0]->{q} }
-sub length { scalar @{$_[0]->{q}} }
+sub caching { $_[0]->{cache} }
 
-sub all { @{$_[0]->{q}} }
+# returns how many items are in the queue
+sub length {
+    my $self = CORE::shift();
+
+    return (scalar @{$self->{q}}) if $self->caching;
+
+    my $table = $self->table_name;
+    my ($length) = $self->dbh->selectrow_array("SELECT MAX(idx) FROM $table WHERE key=?",
+                                               undef, $self->key);
+    die $self->dbh->errstr if $self->dbh->err;
+
+    $length = defined $length ? $length + 1 : 0;
+
+    return $length || 0;
+}
 
 # do a sql statement and die if it fails
 sub do {
@@ -117,7 +135,7 @@ sub empty {
     my $table = $self->table_name;
     $self->do("DELETE FROM $table WHERE key=?", $self->key);
 
-    $self->{q} = [];
+    $self->{q} = [] if $self->caching;
 }
 
 sub table_exists {
@@ -134,9 +152,6 @@ sub unshift {
 
     my $idx = $self->length;
 
-    # add to end of queue
-    push @{$self->{q}}, @vals;
-
     my $key = $self->dbh->quote($self->key);
     my $table = $self->table_name;
     my $dbh = $self->dbh;
@@ -145,6 +160,7 @@ sub unshift {
     my $sth = $dbh->prepare(qq[ INSERT INTO $table (key, idx, value) VALUES ($key, ?, ?) ]);
 
     foreach my $val (@vals) {
+        $self->{q}->[$idx] = $val if $self->caching;
         $sth->execute($idx++, $val);
         if ($dbh->err) {
             die $dbh->errstr;
@@ -162,20 +178,43 @@ sub shift {
 
     my $count = defined $_count ? $_count : 1;
 
-    # get vals by unshifting in-memory array
-    my @vals;
-    push @vals, shift @{$self->{q}} for 1 .. $count;
+    if ($self->caching) {
+        CORE::shift(@{$self->{q}}) for 1 .. $count;
+    }
 
     my $table = $self->table_name;
 
-    # unshift value at index 0
+    # begin transaction
+    $self->dbh->begin_work;
+
+    # get $count elements
+    my $valsref = $self->dbh->selectall_arrayref("SELECT value FROM $table WHERE key = ? AND idx < ?",
+                                                 undef, $self->key, $count);
+    my @vals = map { @$_ } @$valsref;
+
+    # remove the retreived elements
     $self->do("DELETE FROM $table WHERE key=? AND idx < ?", $self->key, $count);
 
     # shift other indices down
     $self->do("UPDATE $table SET idx = idx - ? WHERE key=?", $count, $self->key);
 
+    # commit transaction
+    $self->dbh->commit;
+
+    # return first element if no $count defined, otherwise return array of values
     return $vals[0] unless defined $_count;
     return @vals;
+}
+
+# returns all elements of the queue
+sub all {
+    my $self = CORE::shift();
+
+    return @{$self->{q}} if $self->caching;
+
+    my $valsref = $self->dbh->selectall_arrayref("SELECT value FROM " . $self->table_name . " WHERE key = ?",
+                                                 undef, $self->key);
+    return map { @$_ } @$valsref;
 }
 
 1;

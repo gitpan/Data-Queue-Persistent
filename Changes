@@ -1,5 +1,9 @@
 Revision history for Perl extension Data::Queue::Persistent.
 
+0.03
+        - more tests
+        - making caching an option
+
 0.02
         - add option to pass in dbh
 
