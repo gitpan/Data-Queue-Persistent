@@ -5,9 +5,8 @@ use strict;
 use warnings;
 use Carp qw / croak /;
 use DBI;
-use Data::Dumper;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 our $schema = q{
     CREATE TABLE %s (
@@ -232,6 +231,7 @@ Data::Queue::Persistent - Perisistent database-backed queue
     table => 'persistent_queue',
     dsn   => 'dbi:SQLite:dbname=queue.db',
     id    => 'testqueue',
+    cache => 1,
   );
   $q->add('first', 'second', 'third', 'fourth');
   $q->remove;      # returns 'first'
@@ -260,21 +260,26 @@ exists.
 
 Options:
 
-dsn: DSN for database connection
+dsn: DSN for database connection.
 
-dbh: Already initialized DBI connection handle
+dbh: Already initialized DBI connection handle.
 
-id: The ID of this queue. You can have multiple queues stored in the same table, distinguished by their IDs.
+id: The ID of this queue. You can have multiple queues stored in the
+same table, distinguished by their IDs.
 
-user: The username for database connection (optional)
+user: The username for database connection (optional).
 
-pass: The password for database connection (optional)
+pass: The password for database connection (optional).
 
-table: The table name to use ('persistent_queue' by default)
+cache: Enable caching of the queue for speed. Not reccommended if
+multiple instances of the queue will be used concurrently. Default is
+0.
+
+table: The table name to use ('persistent_queue' by default).
 
 =item * add(@items)
 
-Adds a list of items to the queue
+Adds a list of items to the queue.
 
 =item * remove($count)
 
@@ -286,23 +291,27 @@ of values.
 
 Returns all elements in the queue. Does not modify the queue.
 
+=item * length
+
+Returns count of elements in the queue.
+
 =item * empty
 
-Removes all elements from the queue
+Removes all elements from the queue.
 
 =item * unshift(@items)
 
-Alias for C<add(@items)>
+Alias for C<add(@items)>.
 
 =item * shift($count)
 
-Alias for C<remove($count)>
+Alias for C<remove($count)>.
 
 =back
 
 =head1 SEE ALSO
 
-Any data structures book
+Any data structures book.
 
 =head1 AUTHOR
 
