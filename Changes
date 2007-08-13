@@ -1,5 +1,8 @@
 Revision history for Perl extension Data::Queue::Persistent.
 
+0.06
+        - add 'noload' option for constructor
+
 0.05
         - better support for mysql, fixing table_exists for quoted
           tables

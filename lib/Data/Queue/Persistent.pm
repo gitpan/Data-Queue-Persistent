@@ -6,7 +6,7 @@ use warnings;
 use Carp qw / croak /;
 use DBI;
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 our $schema = q{
     CREATE TABLE %s (
@@ -35,6 +35,8 @@ sub new {
 
     my $table = delete $opts{table} || 'persistent_queue';
 
+    my $noload = delete $opts{noload};
+
     # connect to db
     if ($dsn) {
         $dbh = DBI->connect($dsn, $username, $pass)
@@ -51,7 +53,7 @@ sub new {
 
     bless $self, $class;
     $self->init;
-    $self->load if $self->caching;
+    $self->load if $self->caching && ! $noload;
 
     return $self;
 }
@@ -236,10 +238,11 @@ Data::Queue::Persistent - Perisistent database-backed queue
 
   use Data::Queue::Persistent;
   my $q = Data::Queue::Persistent->new(
-    table => 'persistent_queue',
-    dsn   => 'dbi:SQLite:dbname=queue.db',
-    id    => 'testqueue',
-    cache => 1,
+    table  => 'persistent_queue', # name to save queues in
+    dsn    => 'dbi:SQLite:dbname=queue.db', # dsn for database to save queues
+    id     => 'testqueue', # queue identifier
+    cache  => 1,
+    noload => 1, # don't load saved queue automatically
   );
   $q->add('first', 'second', 'third', 'fourth');
   $q->remove;      # returns 'first'
@@ -284,6 +287,8 @@ multiple instances of the queue will be used concurrently. Default is
 0.
 
 table: The table name to use ('persistent_queue' by default).
+
+noload: Don't load queue data when initialized (only applicable if caching is used)
 
 =item * add(@items)
 
