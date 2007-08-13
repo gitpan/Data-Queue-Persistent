@@ -27,7 +27,7 @@ unlink $testdb if -e $testdb;
 
     ok($q1->table_exists, "Created persistent queue with sqlite backend");
 
-    run_tests($q1);
+    run_tests($q1, 0);
 }
 
 # test caching
@@ -40,11 +40,12 @@ unlink $testdb if -e $testdb;
 
     ok($q2->table_exists, "Created persistent queue with sqlite backend, using caching");
 
-    run_tests($q2);
+    run_tests($q2, 1);
 }
 
 sub run_tests {
     my $q = shift;
+    my $caching = shift;
 
     # make sure queue is empty (in case it loaded data from a previous test)
     $q->empty;
@@ -70,6 +71,7 @@ sub run_tests {
     my $other_q = Data::Queue::Persistent->new(
                                                dsn => "dbi:SQLite:dbname=$testdb",
                                                id  => 'test',
+                                               cache => $caching,
                                                );
 
     is(scalar $other_q->all, 3, "loaded queue from db");
@@ -78,5 +80,11 @@ sub run_tests {
     $q->empty;
 
     is($q->length, 0, "empty");
-    is_deeply([$other_q->all], [], "empty");
+
+    if ($caching) {
+        # since other instance is cached, shouldn't be affected
+        is_deeply([$other_q->all], [7, 9, 11], "empty");
+    } else {
+        is_deeply([$other_q->all], [], "empty");
+    }
 }

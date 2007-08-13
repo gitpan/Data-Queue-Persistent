@@ -5,8 +5,9 @@ use strict;
 use warnings;
 use Carp qw / croak /;
 use DBI;
+use Data::Dumper;
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 our $schema = q{
     CREATE TABLE %s (
@@ -75,13 +76,24 @@ sub length {
     return (scalar @{$self->{q}}) if $self->caching;
 
     my $table = $self->table_name;
-    my ($length) = $self->dbh->selectrow_array("SELECT MAX(idx) FROM $table WHERE qkey=?",
+    my ($length) = $self->dbh->selectrow_array("SELECT COUNT(idx) FROM $table WHERE qkey=?",
                                                undef, $self->key);
     die $self->dbh->errstr if $self->dbh->err;
 
-    $length = defined $length ? $length + 1 : 0;
-
     return $length || 0;
+}
+
+sub _max_idx {
+    my $self = CORE::shift();
+
+    # TODO: cache max index
+
+    my $table = $self->table_name;
+    my ($idx) = $self->dbh->selectrow_array("SELECT MAX(idx) FROM $table WHERE qkey=?",
+                                               undef, $self->key);
+    die $self->dbh->errstr if $self->dbh->err;
+
+    return defined $idx ? $idx + 1 : 0;
 }
 
 # do a sql statement and die if it fails
@@ -113,23 +125,16 @@ sub load {
     my $table = $self->table_name or croak "No table name defined";
     die "Table $table does not exist." unless $self->table_exists;
 
-    my $rows = $self->dbh->selectall_arrayref("SELECT idx, value FROM $table WHERE qkey=?", undef, $self->key);
+    my $rows = $self->dbh->selectall_arrayref("SELECT value FROM $table WHERE qkey=? ORDER BY idx", undef, $self->key);
     die $self->dbh->errstr if $self->dbh->err;
 
     return unless $rows && @$rows;
-
     $self->absorb_rows(@$rows);
 }
 
 sub absorb_rows {
     my ($self, @rows) = @_;
-
-    foreach my $row (@rows) {
-        my ($idx, $val) = @$row;
-        last unless defined $idx && defined $val;
-
-        $self->{q}->[$idx] = $val;
-    }
+    push @{$self->{q}}, map { $_->[0] } @rows;
 }
 
 # delete everything from the queue
@@ -159,7 +164,7 @@ sub table_exists {
 sub unshift {
     my ($self, @vals) = @_;
 
-    my $idx = $self->length;
+    my $idx = $self->_max_idx;
 
     my $key = $self->dbh->quote($self->key);
     my $table = $self->table_name;
@@ -169,7 +174,8 @@ sub unshift {
     my $sth = $dbh->prepare(qq[ INSERT INTO $table (qkey, idx, value) VALUES ($key, ?, ?) ]);
 
     foreach my $val (@vals) {
-        $self->{q}->[$idx] = $val if $self->caching;
+        push @{$self->{q}}, $val if $self->caching;
+
         $sth->execute($idx++, $val);
         if ($dbh->err) {
             die $dbh->errstr;
@@ -186,6 +192,7 @@ sub shift {
     my ($self, $_count) = @_;
 
     my $count = defined $_count ? $_count : 1;
+    $count += 0;
 
     if ($self->caching) {
         CORE::shift(@{$self->{q}}) for 1 .. $count;
@@ -197,15 +204,18 @@ sub shift {
     $self->dbh->begin_work;
 
     # get $count elements
-    my $valsref = $self->dbh->selectall_arrayref("SELECT value FROM $table WHERE qkey = ? AND idx < ?",
-                                                 undef, $self->key, $count);
-    my @vals = map { @$_ } @$valsref;
+    my $rows = $self->dbh->selectall_arrayref("SELECT idx, value FROM $table WHERE qkey = ? ORDER BY idx LIMIT $count",
+                                              undef, $self->key);
+    die $self->dbh->errstr if $self->dbh->err;
+
+    my @idx = map { $_->[0] } @$rows;
+    my @vals = map { $_->[1] } @$rows;
+
+    return () unless @vals;
 
     # remove the retreived elements
-    $self->do("DELETE FROM $table WHERE qkey=? AND idx < ?", $self->key, $count);
-
-    # shift other indices down
-    $self->do("UPDATE $table SET idx = idx - ? WHERE qkey=?", $count, $self->key);
+    my $bindstr = join(',', map { '?' } @idx);
+    $self->do("DELETE FROM $table WHERE qkey=? AND idx IN ($bindstr)", $self->key, @idx);
 
     # commit transaction
     $self->dbh->commit;
