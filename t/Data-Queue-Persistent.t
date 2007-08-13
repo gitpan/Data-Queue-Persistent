@@ -16,6 +16,8 @@ if ($skip) {
 
 our $testdb = 'test.db';
 
+unlink $testdb if -e $testdb;
+
 # run tests
 {
     my $q1 = Data::Queue::Persistent->new(
@@ -23,7 +25,7 @@ our $testdb = 'test.db';
                                           id  => 'test',
                                           );
 
-    ok($q1, "Created persistent queue with sqlite backend");
+    ok($q1->table_exists, "Created persistent queue with sqlite backend");
 
     run_tests($q1);
 }
@@ -36,7 +38,7 @@ our $testdb = 'test.db';
                                           cache => 1,
                                           );
 
-    ok($q2, "Created persistent queue with sqlite backend, using caching");
+    ok($q2->table_exists, "Created persistent queue with sqlite backend, using caching");
 
     run_tests($q2);
 }

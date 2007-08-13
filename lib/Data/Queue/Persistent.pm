@@ -6,14 +6,14 @@ use warnings;
 use Carp qw / croak /;
 use DBI;
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 our $schema = q{
     CREATE TABLE %s (
-                     key VARCHAR(255) NOT NULL,
+                     qkey VARCHAR(255) NOT NULL,
                      idx INTEGER UNSIGNED NOT NULL,
                      value BLOB,
-                     PRIMARY KEY (key, idx)
+                     PRIMARY KEY (qkey, idx)
                      )
     };
 
@@ -50,14 +50,17 @@ sub new {
     };
 
     bless $self, $class;
-
     $self->init;
     $self->load if $self->caching;
 
     return $self;
 }
 
-sub table_name { $_[0]->{table_name} }
+sub table_name {
+    my $self = shift;
+    return $self->dbh->quote_identifier($self->{table_name});
+}
+
 sub dbh { $_[0]->{dbh} }
 sub key { $_[0]->{key} }
 sub q { $_[0]->{q} }
@@ -70,7 +73,7 @@ sub length {
     return (scalar @{$self->{q}}) if $self->caching;
 
     my $table = $self->table_name;
-    my ($length) = $self->dbh->selectrow_array("SELECT MAX(idx) FROM $table WHERE key=?",
+    my ($length) = $self->dbh->selectrow_array("SELECT MAX(idx) FROM $table WHERE qkey=?",
                                                undef, $self->key);
     die $self->dbh->errstr if $self->dbh->err;
 
@@ -103,12 +106,12 @@ sub init {
 
 # load data from db
 sub load {
-    my $self = shift;
+    my $self = CORE::shift();
 
     my $table = $self->table_name or croak "No table name defined";
     die "Table $table does not exist." unless $self->table_exists;
 
-    my $rows = $self->dbh->selectall_arrayref("SELECT idx, value FROM $table WHERE key=?", undef, $self->key);
+    my $rows = $self->dbh->selectall_arrayref("SELECT idx, value FROM $table WHERE qkey=?", undef, $self->key);
     die $self->dbh->errstr if $self->dbh->err;
 
     return unless $rows && @$rows;
@@ -132,16 +135,21 @@ sub empty {
     my ($self) = @_;
 
     my $table = $self->table_name;
-    $self->do("DELETE FROM $table WHERE key=?", $self->key);
+    $self->do("DELETE FROM $table WHERE qkey=?", $self->key);
 
     $self->{q} = [] if $self->caching;
 }
 
 sub table_exists {
-    my $self = shift;
+    my $self = CORE::shift();
     # get table info, see if our table exists
-    my @tables = $self->dbh->tables(undef, undef, $self->table_name, "TABLE");
-    return @tables ? 1 : 0;
+    my @tables = $self->dbh->tables(undef, undef, $self->{table_name}, "TABLE");
+    my $table = $self->{table_name};
+
+    $table = $self->dbh->quote_identifier($self->{table_name})
+        if $self->dbh->get_info(29); # quote if the db driver uses table name quoting
+
+    return grep { $_ eq $table } @tables;
 }
 
 # add @vals to the queue
@@ -156,7 +164,7 @@ sub unshift {
     my $dbh = $self->dbh;
 
     $dbh->begin_work;
-    my $sth = $dbh->prepare(qq[ INSERT INTO $table (key, idx, value) VALUES ($key, ?, ?) ]);
+    my $sth = $dbh->prepare(qq[ INSERT INTO $table (qkey, idx, value) VALUES ($key, ?, ?) ]);
 
     foreach my $val (@vals) {
         $self->{q}->[$idx] = $val if $self->caching;
@@ -187,15 +195,15 @@ sub shift {
     $self->dbh->begin_work;
 
     # get $count elements
-    my $valsref = $self->dbh->selectall_arrayref("SELECT value FROM $table WHERE key = ? AND idx < ?",
+    my $valsref = $self->dbh->selectall_arrayref("SELECT value FROM $table WHERE qkey = ? AND idx < ?",
                                                  undef, $self->key, $count);
     my @vals = map { @$_ } @$valsref;
 
     # remove the retreived elements
-    $self->do("DELETE FROM $table WHERE key=? AND idx < ?", $self->key, $count);
+    $self->do("DELETE FROM $table WHERE qkey=? AND idx < ?", $self->key, $count);
 
     # shift other indices down
-    $self->do("UPDATE $table SET idx = idx - ? WHERE key=?", $count, $self->key);
+    $self->do("UPDATE $table SET idx = idx - ? WHERE qkey=?", $count, $self->key);
 
     # commit transaction
     $self->dbh->commit;
@@ -211,7 +219,7 @@ sub all {
 
     return @{$self->{q}} if $self->caching;
 
-    my $valsref = $self->dbh->selectall_arrayref("SELECT value FROM " . $self->table_name . " WHERE key = ?",
+    my $valsref = $self->dbh->selectall_arrayref("SELECT value FROM " . $self->table_name . " WHERE qkey = ?",
                                                  undef, $self->key);
     return map { @$_ } @$valsref;
 }
