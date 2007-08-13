@@ -11,7 +11,7 @@ eval "use DBD::SQLite; 1;" or $skip = 1;
 if ($skip) {
     plan skip_all => "Can't run tests without SQLite";
 } else {
-    plan tests => 20;
+    plan tests => 30;
 }
 
 our $testdb = 'test.db';
@@ -23,6 +23,7 @@ unlink $testdb if -e $testdb;
     my $q1 = Data::Queue::Persistent->new(
                                           dsn => "dbi:SQLite:dbname=$testdb",
                                           id  => 'test',
+                                          max_size => 15,
                                           );
 
     ok($q1->table_exists, "Created persistent queue with sqlite backend");
@@ -35,6 +36,7 @@ unlink $testdb if -e $testdb;
     my $q2 = Data::Queue::Persistent->new(
                                           dsn   => "dbi:SQLite:dbname=$testdb",
                                           id    => 'test',
+                                          max_size => 15,
                                           cache => 1,
                                           );
 
@@ -59,6 +61,10 @@ sub run_tests {
 
     $q->add(1, 2, 3);
 
+    is($q->get(0, 1), 'b', 'get');
+    is(scalar $q->get(1), 'c', 'get');
+    is_deeply([$q->get(2,2)], ['lol', 'dongs'], 'get');
+
     is($q->length, 7, "length");
 
     is_deeply([$q->shift(3)], ['b', 'c', 'lol'], 'multiple shift');
@@ -78,7 +84,6 @@ sub run_tests {
     is_deeply([$other_q->all], [$q->all], "loaded queue from db");
 
     $q->empty;
-
     is($q->length, 0, "empty");
 
     if ($caching) {
@@ -87,4 +92,11 @@ sub run_tests {
     } else {
         is_deeply([$other_q->all], [], "empty");
     }
+
+
+    $q->add(map { $_ } 1..20);
+    is($q->length, 15, 'max_size');
+    is_deeply([$q->all], [6..20], "max_size");
+
+    $q->empty;
 }

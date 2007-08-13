@@ -7,7 +7,7 @@ use Carp qw / croak /;
 use DBI;
 use Data::Dumper;
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 our $schema = q{
     CREATE TABLE %s (
@@ -37,6 +37,7 @@ sub new {
     my $table = delete $opts{table} || 'persistent_queue';
 
     my $noload = delete $opts{noload};
+    my $max_size = delete $opts{max_size};
 
     # connect to db
     if ($dsn) {
@@ -50,6 +51,7 @@ sub new {
         q          => [],
         key        => $key,
         table_name => $table,
+        max_size   => $max_size,
     };
 
     bless $self, $class;
@@ -68,6 +70,7 @@ sub dbh { $_[0]->{dbh} }
 sub key { $_[0]->{key} }
 sub q { $_[0]->{q} }
 sub caching { $_[0]->{cache} }
+sub max_size { $_[0]->{max_size} }
 
 # returns how many items are in the queue
 sub length {
@@ -184,6 +187,11 @@ sub unshift {
     }
 
     $dbh->commit;
+
+    # truncate queue to max_size
+    my $max_size = $self->max_size;
+    my $length = $self->length;
+    $self->shift($length - $max_size) if defined $max_size && $length > $max_size;
 }
 
 # shift $count elements off the queue
@@ -225,6 +233,23 @@ sub shift {
     return @vals;
 }
 
+# retreive elements at an index
+sub get {
+    my ($self, $offset, $length) = @_;
+
+    return $self->all unless defined $offset || defined $length;
+
+    $length = -1 unless defined $length; # need to specify a limit when selecting an offset, this is wack
+    $offset += 0;
+
+    my $table = $self->table_name;
+    my $rows = $self->dbh->selectcol_arrayref("SELECT value FROM $table WHERE qkey = ? ORDER BY idx LIMIT $length OFFSET $offset",
+                                              undef, $self->key);
+    die $self->dbh->errstr if $self->dbh->err;
+
+    return wantarray ? @$rows : $rows->[0];
+}
+
 # returns all elements of the queue
 sub all {
     my $self = CORE::shift();
@@ -253,6 +278,7 @@ Data::Queue::Persistent - Perisistent database-backed queue
     id     => 'testqueue', # queue identifier
     cache  => 1,
     noload => 1, # don't load saved queue automatically
+    max_size => 100, # limit to 100 items
   );
   $q->add('first', 'second', 'third', 'fourth');
   $q->remove;      # returns 'first'
@@ -300,6 +326,8 @@ table: The table name to use ('persistent_queue' by default).
 
 noload: Don't load queue data when initialized (only applicable if caching is used)
 
+max_size: Limit the queue to max_size, with the oldest elements falling off
+
 =item * add(@items)
 
 Adds a list of items to the queue.
@@ -309,6 +337,10 @@ Adds a list of items to the queue.
 Removes $count (1 by default) items from the queue and returns
 them. Returns value if no $count specified, otherwise returns an array
 of values.
+
+=item * get([$offset[, $length]])
+
+Gets $length elements starting at offset $offset
 
 =item * all
 
