@@ -11,7 +11,7 @@ eval "use DBD::SQLite; 1;" or $skip = 1;
 if ($skip) {
     plan skip_all => "Can't run tests without SQLite";
 } else {
-    plan tests => 30;
+    plan tests => 32;
 }
 
 our $testdb = 'test.db';
@@ -72,6 +72,8 @@ sub run_tests {
     is_deeply([$q->shift(4)], ['dongs', 1, 2, 3], 'multiple shift');
 
     $q->add(7, 9, 11);
+
+    is_deeply([$q->get(0, 2, reverse => 1)], [11, 9], 'get reverse');
 
     # load a new queue, make sure data is the same
     my $other_q = Data::Queue::Persistent->new(

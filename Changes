@@ -1,5 +1,12 @@
 Revision history for Perl extension Data::Queue::Persistent.
 
+0.09
+        - allow get in reverse order
+
+0.08
+        - allow max_size option
+        - add accessor with offset and length
+
 0.07
         - improve efficiency - don't keep shifting indices around
 

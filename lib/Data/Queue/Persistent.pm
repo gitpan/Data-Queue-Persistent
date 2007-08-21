@@ -5,9 +5,8 @@ use strict;
 use warnings;
 use Carp qw / croak /;
 use DBI;
-use Data::Dumper;
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 our $schema = q{
     CREATE TABLE %s (
@@ -235,15 +234,17 @@ sub shift {
 
 # retreive elements at an index
 sub get {
-    my ($self, $offset, $length) = @_;
+    my ($self, $offset, $length, %opts) = @_;
 
     return $self->all unless defined $offset || defined $length;
 
     $length = -1 unless defined $length; # need to specify a limit when selecting an offset, this is wack
     $offset += 0;
 
+    my $direction = $opts{reverse} ? "DESC" : '';
+
     my $table = $self->table_name;
-    my $rows = $self->dbh->selectcol_arrayref("SELECT value FROM $table WHERE qkey = ? ORDER BY idx LIMIT $length OFFSET $offset",
+    my $rows = $self->dbh->selectcol_arrayref("SELECT value FROM $table WHERE qkey = ? ORDER BY idx $direction LIMIT $length OFFSET $offset",
                                               undef, $self->key);
     die $self->dbh->errstr if $self->dbh->err;
 
