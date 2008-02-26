@@ -6,7 +6,7 @@ use warnings;
 use Carp qw / croak /;
 use DBI;
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 our $schema = q{
     CREATE TABLE %s (
