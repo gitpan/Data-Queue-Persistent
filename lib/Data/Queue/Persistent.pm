@@ -6,7 +6,7 @@ use warnings;
 use Carp qw / croak /;
 use DBI;
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 our $schema = q{
     CREATE TABLE %s (
@@ -222,7 +222,7 @@ sub shift {
 
     # remove the retreived elements
     my $bindstr = join(',', map { '?' } @idx);
-    $self->do("DELETE FROM $table WHERE qkey=? AND idx IN ($bindstr)", $self->key, @idx);
+    $self->do("DELETE FROM $table WHERE qkey=? AND idx BETWEEN ? AND ?", $self->key, $idx[0], $idx[-1]);
 
     # commit transaction
     $self->dbh->commit;

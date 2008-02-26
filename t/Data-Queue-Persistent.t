@@ -1,48 +1,50 @@
 use strict;
-use Test::More;
+use warnings;
+use Test::More tests => 33;
 
 BEGIN {
     use_ok('Data::Queue::Persistent');
 };
 
+our $testdb = 'test.db';
+
 my $skip;
 eval "use DBD::SQLite; 1;" or $skip = 1;
 
-if ($skip) {
-    plan skip_all => "Can't run tests without SQLite";
-} else {
-    plan tests => 32;
+SKIP: {
+    skip "Can't run tests without SQLite", 32 if $skip;
+    test();
 }
 
-our $testdb = 'test.db';
+sub test {
+    unlink $testdb if -e $testdb;
 
-unlink $testdb if -e $testdb;
+    # run tests
+    {
+        my $q1 = Data::Queue::Persistent->new(
+            dsn => "dbi:SQLite:dbname=$testdb",
+            id  => 'test',
+            max_size => 15,
+            );
 
-# run tests
-{
-    my $q1 = Data::Queue::Persistent->new(
-                                          dsn => "dbi:SQLite:dbname=$testdb",
-                                          id  => 'test',
-                                          max_size => 15,
-                                          );
+        ok($q1->table_exists, "Created persistent queue with sqlite backend");
 
-    ok($q1->table_exists, "Created persistent queue with sqlite backend");
+        run_tests($q1, 0);
+    }
 
-    run_tests($q1, 0);
-}
+    # test caching
+    {
+        my $q2 = Data::Queue::Persistent->new(
+            dsn   => "dbi:SQLite:dbname=$testdb",
+            id    => 'test',
+            max_size => 15,
+            cache => 1,
+            );
 
-# test caching
-{
-    my $q2 = Data::Queue::Persistent->new(
-                                          dsn   => "dbi:SQLite:dbname=$testdb",
-                                          id    => 'test',
-                                          max_size => 15,
-                                          cache => 1,
-                                          );
+        ok($q2->table_exists, "Created persistent queue with sqlite backend, using caching");
 
-    ok($q2->table_exists, "Created persistent queue with sqlite backend, using caching");
-
-    run_tests($q2, 1);
+        run_tests($q2, 1);
+    }
 }
 
 sub run_tests {
