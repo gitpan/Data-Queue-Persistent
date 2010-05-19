@@ -6,7 +6,7 @@ use warnings;
 use Carp qw / croak /;
 use DBI;
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 our $schema = q{
     CREATE TABLE %s (
@@ -158,7 +158,7 @@ sub table_exists {
     $table = $self->dbh->quote_identifier($self->{table_name})
         if $self->dbh->get_info(29); # quote if the db driver uses table name quoting
 
-    return grep { $_ eq $table } @tables;
+    return grep { $_ =~ m/$table$/ } @tables;
 }
 
 # add @vals to the queue

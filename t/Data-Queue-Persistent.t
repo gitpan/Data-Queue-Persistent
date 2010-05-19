@@ -14,6 +14,7 @@ eval "use DBD::SQLite; 1;" or $skip = 1;
 SKIP: {
     skip "Can't run tests without SQLite", 32 if $skip;
     test();
+    unlink $testdb;
 }
 
 sub test {
